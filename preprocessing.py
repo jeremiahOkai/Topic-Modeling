@@ -2,16 +2,42 @@ from Labels import Labels
 from models import Models
 import pandas as pd
 import re
-from nltk.stem.snowball import SnowballStemmer
 from nltk.corpus import stopwords
 import string
-import scipy
 import sqlite3
-import json
 from time import time
+import eventregistry as ER
+"""
+ ############  READ ME ##############
+
+Topic tree generation is in 2 parts:
+1. We determine patterns in the users tweets using topic modeling 
+2. Using disambiguity in wiki and the first two hierarchies in DMOZ to build the topic tree model deserved 
+
+The code below is just implementation of the topic modeling and generating the patterns which is stored in csv file 
+and later used in wiki and DMOZ. It takes only 3 mins to run on the 28 million rows 
+
+We have 3 functions in the code: 
+1. db() : this is a databsed used to stored large number of cleaned tweets since we cannot use pickle to serialize(only 
+used on small datasets). We then read directly these values into pandas tables. The main reason for working with pandas
+is to avoid loops which slows down the program.
+
+2. create_dict() : transforms pandas table data into dictionary which is passed to the 3 function. It takes approximately
+22 mins to execute. When done it stored in a pickle file which can be used instead of executing the whole process again.
+
+3. creating_dataframe(): is a bad choice of function name but all is does is take the dictionary in step 2 apply 
+all preprocessing steps(stopwords, stemming, etc) required for implementing the topic models. Then passed to the models 
+to generate the patterns in documents. 
+
+Two models are being useed here the LDA and NMF. I did this to check which one actually gives a good pattern recognition
+to texts. The output is then read on to a csv file which can be used to building the topic tree
+
+
+
+"""
+
 
 class Preprocess_Main:
-
 
     regex_str = [
         r'<[^>]+>',  # HTML tags
@@ -39,6 +65,39 @@ class Preprocess_Main:
     def __init__(self, df):
         self.df = df
         # pass
+    @staticmethod
+    def db(db):
+        conn = sqlite3.connect(db)
+
+        c = conn.cursor()
+
+        # Create table
+        # c.execute('''CREATE TABLE twitter (user_id text, tweets text)''')
+        counter = 0
+        # with open('/Users/jeremyjohnson/Documents/gate.csv', encoding='ISO-8859-1') as f:
+        #     cv = csv.reader(f, delimiter='\t', quoting=csv.QUOTE_NONE)
+        #     for i in cv:
+        #         # if counter <= 10:
+        #         p = ''.join(re.findall(r'\d{8} .+', ' '.join(i)))
+        #         if p != '':
+        #             t = (p.split()[0], (' '.join(p.split()[1:])))
+        #             c.execute("INSERT INTO twitter VALUES (?,?)", t)
+        #             counter +=1
+        #             print(counter, t)
+        #
+        # print("Finished with DB")
+        # conn.commit()
+        # conn.close()
+
+        # sql = "SELECT * FROM twitter"
+        # t0 = time()
+        # print('Executing command')
+        # df = pd.read_sql(sql, conn)
+        # print(df.head())
+        # print("Executing time:", round(time() - t0, 3), "s")
+        # conn.close()
+        # print('### Starting to create dicts ###')
+        # return df
 
     def create_dict(self):
         mydict = {}
@@ -107,15 +166,26 @@ class Preprocess_Main:
             else:
                 docs[key] = documents
 
-            mm = Models(5, 10, **docs)
+            mm = Models(50, 10, **docs)
             terms_to_wiki = mm.calling_methods('LDA')
             ll = Labels(terms_to_wiki)
             wiki_titles = ll.get_titles_wiki()
             equal_length = ll.remove_all_null_dicts_returned_from_wiki(**wiki_titles)
             frq = ll.calculating_word_frequency(**equal_length)
             results = ll.predicting_label(**frq)
+            l = []
+            for i in range(len(results)):
+                er = ER.EventRegistry(apiKey='32db7607-6c90-40bd-b653-e167da1462c9')
+                analytics = ER.Analytics(er)
+                cat = analytics.categorize(results[i][1])
+                for k, v in cat.items():
+                    if k == 'categories':
+                        for y, value in v[0].items():
+                            if y == 'label':
+                                l.append(value.split('/')[2])
 
-            print(key, results)
+            print('\n')
+            print(key, l)
         print('########### FINAL FILE EXECUTED ##################')
 
 
