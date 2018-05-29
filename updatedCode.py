@@ -13,8 +13,7 @@ from sklearn.decomposition import NMF, LatentDirichletAllocation
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 import wikipedia as wiki
 import nltk
-
-nltk.download('stopwords')
+# nltk.download('stopwords')
 from nltk.util import ngrams
 import numpy as np
 import re
@@ -24,7 +23,43 @@ import operator
 import requests
 import pprint as pp
 from itertools import islice
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+import ast
+from sklearn.externals import joblib
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from sklearn.manifold import MDS
+import codecs
+from sklearn import feature_extraction
+import sklearn.cluster
+import distance
 
+
+def creating_dbFiles(data):
+    chunksize = 10 ** 6
+
+    filename = ''  # put filename here
+
+    path = ''  # put your path here
+    conn = sqlite3.connect(path + 'final.db')
+    c = conn.cursor()
+
+    print('Creating Database......')
+    c.execute('''CREATE TABLE all_users (user_id text, tweets text)''')
+
+    for chunk in pd.read_csv(filename, chunksize=chunksize, engine='python', encoding='utf8', error_bad_lines=False):
+        chunk = chunk[['UserID', 'OriginalText']]
+        chunk = chunk[np.isfinite(chunk['UserID'])]
+        for row in chunk.itertuples():
+            c.execute("INSERT INTO all_users VALUES (?,?)", (row[1], row[2]))
+    print("Finished with DB")
+    conn.commit()
+    conn.close()
+
+
+#     SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'YourTableName'
 
 def db_dict(db):
     print('Connecting to DBase')
@@ -118,11 +153,10 @@ def creating_dataframe(dictionary):
     z = []
     timestamps = []
     docs = {}
-
+    t0 = time.time()
     keys = dictionary.keys()
     counter = 1
     for key in keys:
-        t0 = time.time()
         print('Cleaning Tweets for User {}'.format(counter))
         documents = []
         final_words = []
@@ -147,8 +181,8 @@ def creating_dataframe(dictionary):
         else:
             docs[key] = df_.values
         counter += 1
-        print("### Executed time:", round(time.time() - t0, 3), "s ###")
     jj.append(docs)
+    print("### Executed time:", round(time.time() - t0, 3), "s ###")
     print('Done creating dataframe for all users')
     return jj
 
@@ -262,7 +296,7 @@ def Dmoz(pred):
                 except:
                     pass
 
-        with open('file1.csv', 'a') as file:
+        with open('/data/s1931628/bigDataFile.csv', 'a') as file:
             csv_writer = csv.writer(file)
             csv_writer.writerow((key, dmozResults))
 
@@ -277,43 +311,74 @@ def Dmoz(pred):
 #     return final_Dmoz
 
 if __name__ == "__main__":
-    start_time = time.time()
-    s = db_dict('/data/s1931628/topicModeling/tweets.db')
-
-    dataFrame = []
+    timestamps = []
+    path = '/data/s1931628/'
+    s = db_dict(path + 'all_files.db')
     p = Pool(processes=125)
-    for item in chunks(s, 500):
-        dataFrame.append(p.map(creating_dataframe, [item]))
+    for items in chunks(s, 100):
+        item = {}
+        start_time = time.time()
+        for key, values in items.items():
+            if len(values) < 2000:
+                continue
+            else:
+                if key in item:
+                    item[key].append(values[:2000])
+                else:
+                    item[key] = values[:2000]
+        dataFrame = p.map(creating_dataframe, [item])
+        for result in dataFrame:
+            LDAmodels = p.map(LDA_model, result)
+        terms_to_wiki = p.map(display_topics, LDAmodels)
+        wiki_titles = p.map(get_titles_wiki, terms_to_wiki)
+        dmoz = p.map(Dmoz, wiki_titles)
+
+        with open('/data/s1931628/bigDataFile2.csv', 'a') as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow((key, dmozResults))
+    timestamps.append((time.time() - start_time))
     p.close()
     p.join()
 
-    LDAmodels = []
-    for result in dataFrame:
-        for user in result:
-            p = Pool(processes=125)
-            LDAmodels.append(p.map(LDA_model, user))
-        p.close()
-        p.join()
+    files_ = []
+    with open('/data/s1931628/bigDataFile.csv', 'r') as file:
+        reader = csv.reader(file)
+        for line in reader:
+            x = ast.literal_eval(line[1])
+            files_ += x
 
-    terms_to_wiki = []
-    for i in LDAmodels:
-        p = Pool(processes=125)
-        terms_to_wiki.append(p.map(display_topics, i))
-    p.close()
-    p.join()
+    countVect = CountVectorizer()
+    count_matrix = countVect.fit_transform(files_)  # fit the vectorizer to titles
 
-    wiki_titles = []
-    for i in terms_to_wiki:
-        p = Pool(processes=125)
-        wiki_titles.append(p.map(get_titles_wiki, i))
-    p.close()
-    p.join()
+    # terms is just a list of the features used in the tf-idf matrix.
+    terms_count = countVect.get_feature_names()
 
-    p = Pool(processes=125)
-    for i in wiki_titles:
-        dmoz = p.map(Dmoz, i)
-    p.close()
-    p.join()
+    # performing clustering
+    num_clusters = 4
 
+    km = KMeans(n_clusters=num_clusters)
+
+    km.fit(count_matrix)
+
+    clusters = km.labels_.tolist()
+
+    #     dist is defined as 1 - the cosine similarity of each document.
+    #     Cosine similarity is measured against the tf-idf matrix and can be used to generate
+    #     a measure of similarity between each document and the other documents in the corpus
+    dist = 1 - cosine_similarity(tfidf_matrix)
+
+    #     uncomment the below to save your model
+    #     since I've already run my model I am loading from the pickle
+
+    #     joblib.dump(km,  '/data/s1931628/doc_cluster.pkl')
+    #     km = joblib.load('/data/s1931628/doc_cluster.pkl')
+    #     clusters = km.labels_.tolist()
+
+    print("Top terms per cluster:")
+    order_centroids = km.cluster_centers_.argsort()[:, ::-1]
+
+    for i in range(num_clusters):
+        print("Cluster %d:" % i),
+        for ind in order_centroids[i, :6]:
+            print(' %s' % terms_count[ind])
     print("--- %s seconds ---" % (time.time() - start_time))
-
