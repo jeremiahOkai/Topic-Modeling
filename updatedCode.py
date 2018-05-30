@@ -65,7 +65,7 @@ def db_dict(db):
     print('Connecting to DBase')
     conn = sqlite3.connect(db)
     c = conn.cursor()
-    sql = "SELECT * FROM twitter"
+    sql = "SELECT * FROM all_fiiles"
     t0 = time.time()
     print('Executing command')
     df = pd.read_sql(sql, conn)
@@ -78,7 +78,7 @@ def db_dict(db):
     df.dropna(inplace=True, how='any', axis=0)
     t0 = time.time()
     print('Creating dictionary for userIDs')
-    s = {str(id_): text.tolist() for id_, text in df.groupby('UserID')['Text']}
+    s = {str(id_): text.tolist() for id_, text in df.groupby('user_id')['tweets']}
     print("Executing time:", round(time.time() - t0, 3), "s")
     return s
 
@@ -157,6 +157,7 @@ def creating_dataframe(dictionary):
     keys = dictionary.keys()
     counter = 1
     for key in keys:
+        start_time = time.time()
         print('Cleaning Tweets for User {}'.format(counter))
         documents = []
         final_words = []
@@ -180,9 +181,20 @@ def creating_dataframe(dictionary):
             docs[key].append(df_.values)
         else:
             docs[key] = df_.values
+
+        timestamps.append((counter, (time.time() - start_time)))
         counter += 1
+
+    with open('timeOnePreprocess.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow(timestamps)
+
+    with open('timeOneChunkPreprocess.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow([(time.time() - t0)])
+
     jj.append(docs)
-    print("### Executed time:", round(time.time() - t0, 3), "s ###")
+    #     print("### Executed time:", round(time.time() - t0, 3), "s ###")
     print('Done creating dataframe for all users')
     return jj
 
@@ -200,7 +212,7 @@ def LDA_model(results):
         tf_vectorizer = CountVectorizer(max_df=0.5, min_df=1, stop_words='english')
         tf = tf_vectorizer.fit_transform(documents)
         tf_feature_names = tf_vectorizer.get_feature_names()
-        lda = LatentDirichletAllocation(n_components=20, max_iter=10, learning_method='batch',
+        lda = LatentDirichletAllocation(n_components=10, max_iter=10, learning_method='batch',
                                         learning_offset=50., random_state=0).fit(tf)
         if k in get_all_docs:
             get_all_docs[k].append((lda, tf_feature_names))
@@ -214,11 +226,13 @@ def LDA_model(results):
 
 def display_topics(model):
     print('Creating topics for LDA models')
+    timestamps = []
     terms_to_wiki = {}
     t0 = time.time()
     counter = 0
     try:
         for k, v in model.items():
+            start_time = time.time()
             print('Getting topics from LDA for User', counter, ' to dictionary')
             topics_dict = {}
             for topic_idx, topic in enumerate(v[0][0].components_):
@@ -231,11 +245,22 @@ def display_topics(model):
                 terms_to_wiki[k].append(topics_dict)
             else:
                 terms_to_wiki[k] = [topics_dict]
+
+            timestamps.append((counter, (time.time() - start_time)))
             counter += 1
 
     except:
         pass
-    print("### Executed time:", round(time.time() - t0, 3), "s ###")
+
+    with open('timeOneLDAPreprocess.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow(timestamps)
+
+    with open('timeOneChunkLDA.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow([(time.time() - t0)])
+
+    #     print("### Executed time:", round(time.time() - t0, 3), "s ###")
     print('Done creating all topics for LDA models')
     return terms_to_wiki
 
@@ -243,10 +268,12 @@ def display_topics(model):
 def get_titles_wiki(self):
     print('Getting Wiki tiles')
     titles = {}
+    timestamps = []
     t0 = time.time()
     counter = 1
     for key, value in self.items():
         wiki_titles = {}
+        start_time = time.time()
         for i in value:
             for k, v in i.items():
                 s = ' '.join(v)
@@ -261,7 +288,18 @@ def get_titles_wiki(self):
             titles[key].append(wiki_titles)
         else:
             titles[key] = [wiki_titles]
-    #         counter += 1
+
+        timestamps.append((counter, (time.time() - start_time)))
+        counter += 1
+
+    with open('timeOneParseWiki.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow(timestamps)
+
+    with open('timeOneChunkWikiOnly.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow([(time.time() - t0)])
+
     print("### Executed time:", round(time.time() - t0, 3), "s ###")
     print('Done creating wiki titles')
     return titles
@@ -277,8 +315,11 @@ def return_topic_words_from_model(MyList=[], *args):
 
 def Dmoz(pred):
     final_Dmoz = {}
+    timestamps = []
+    counter = 1
     t0 = time.time()
     for key, value in pred.items():
+        start_time = time.time()
         dmozResults = []
         for j in value:
             for k, v in j.items():
@@ -296,7 +337,10 @@ def Dmoz(pred):
                 except:
                     pass
 
-        with open('/data/s1931628/bigDataFile.csv', 'a') as file:
+        timestamps.append((counter, (time.time() - start_time)))
+        counter += 1
+
+        with open('file.csv', 'a') as file:
             csv_writer = csv.writer(file)
             csv_writer.writerow((key, dmozResults))
 
@@ -304,81 +348,53 @@ def Dmoz(pred):
     #             final_Dmoz[key].append(dmozResults)
     #         else:
     #             final_Dmoz[key] = dmozResults
+    with open('timeOneParseDmoz.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow(timestamps)
+
+    with open('timeOneChunkParseDmozOnly.csv', 'a') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerow([(time.time() - t0)])
 
     print("### Executed time:", round(time.time() - t0, 3), "s ###")
 
 
 #     return final_Dmoz
 
+
 if __name__ == "__main__":
-    timestamps = []
-    path = '/data/s1931628/'
-    s = db_dict(path + 'all_files.db')
-    p = Pool(processes=125)
+    p = Pool()
+    counter = 1
+    s = db_dict('/data/s1931628/all_files.db')
     for items in chunks(s, 100):
         item = {}
-        start_time = time.time()
         for key, values in items.items():
-            if len(values) < 2000:
+            if len(values) < 100:
                 continue
             else:
                 if key in item:
-                    item[key].append(values[:2000])
+                    item[key].append(values[:5000])
                 else:
-                    item[key] = values[:2000]
+                    item[key] = values[:5000]
+        start_time_pre_lda = time.time()
         dataFrame = p.map(creating_dataframe, [item])
         for result in dataFrame:
             LDAmodels = p.map(LDA_model, result)
+        time_lda_pre = (time.time() - start_time_pre_lda)
+
+        wiki_dmoz = time.time()
         terms_to_wiki = p.map(display_topics, LDAmodels)
         wiki_titles = p.map(get_titles_wiki, terms_to_wiki)
         dmoz = p.map(Dmoz, wiki_titles)
+        end_wiki_dmoz = time.time() - wiki_dmoz
 
-        with open('/data/s1931628/bigDataFile2.csv', 'a') as file:
+        with open('timeForOneChunkWiki_Dmoz.csv', 'a') as file:
             csv_writer = csv.writer(file)
-            csv_writer.writerow((key, dmozResults))
-    timestamps.append((time.time() - start_time))
+            csv_writer.writerow((len(item), counter, end_wiki_dmoz))
+
+        with open('timeOneChunk_LDA_pre.csv', 'a') as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow((len(item), counter, (time_lda_pre)))
+        counter += 1
     p.close()
     p.join()
-
-    files_ = []
-    with open('/data/s1931628/bigDataFile.csv', 'r') as file:
-        reader = csv.reader(file)
-        for line in reader:
-            x = ast.literal_eval(line[1])
-            files_ += x
-
-    countVect = CountVectorizer()
-    count_matrix = countVect.fit_transform(files_)  # fit the vectorizer to titles
-
-    # terms is just a list of the features used in the tf-idf matrix.
-    terms_count = countVect.get_feature_names()
-
-    # performing clustering
-    num_clusters = 4
-
-    km = KMeans(n_clusters=num_clusters)
-
-    km.fit(count_matrix)
-
-    clusters = km.labels_.tolist()
-
-    #     dist is defined as 1 - the cosine similarity of each document.
-    #     Cosine similarity is measured against the tf-idf matrix and can be used to generate
-    #     a measure of similarity between each document and the other documents in the corpus
-    dist = 1 - cosine_similarity(tfidf_matrix)
-
-    #     uncomment the below to save your model
-    #     since I've already run my model I am loading from the pickle
-
-    #     joblib.dump(km,  '/data/s1931628/doc_cluster.pkl')
-    #     km = joblib.load('/data/s1931628/doc_cluster.pkl')
-    #     clusters = km.labels_.tolist()
-
-    print("Top terms per cluster:")
-    order_centroids = km.cluster_centers_.argsort()[:, ::-1]
-
-    for i in range(num_clusters):
-        print("Cluster %d:" % i),
-        for ind in order_centroids[i, :6]:
-            print(' %s' % terms_count[ind])
-    print("--- %s seconds ---" % (time.time() - start_time))
