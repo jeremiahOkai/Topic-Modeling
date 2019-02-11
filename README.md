@@ -28,5 +28,5 @@ How it works:
 NB: I realized most of the bigrams were returning null values so I decided to comment them out and just focused on the labels returned. Feel free to go ahead and mess around with the code.
 
 
-Signed - Jeremy Johnson
+Signed - Jeremiah Okai.
 
