@@ -106,7 +106,7 @@ class Labels:
                     counter = i[1]
                     title = i[0]
             results.append((k, title, counter))
-        return results
-
+       # return results
+#this is the old version 
 
 
